@@ -21,6 +21,7 @@ app.js
 | Pollen levels (measured, Europe) | [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api) | `air-quality-api.open-meteo.com/v1/air-quality`, pollen fields via the `cams_europe` domain |
 | Pollen levels (estimated, everywhere else) | Built client-side, see below | No API — pure JS, no key, no billing |
 | Severe weather alerts | [NWS Alerts API](https://www.weather.gov/documentation/services-web-api) | `api.weather.gov/alerts/active?point=lat,lon` |
+| Alert area map | [Leaflet.js](https://leafletjs.com/) + [OpenStreetMap](https://www.openstreetmap.org/) tiles | Loaded from unpkg with Subresource Integrity hashes; no API key, free tile usage under OSM's standard attribution |
 
 **Coverage limitations worth knowing:**
 - **Pollen**: Open-Meteo's pollen forecast is backed by the CAMS *European*
@@ -100,6 +101,31 @@ Open-Meteo's hourly forecast and takes the highest value in that window:
 
 This is a simple heuristic, not a meteorological model — feel free to adjust
 the thresholds in `renderPrecipitation()` in `app.js`.
+
+## How the severe-alert area map works
+
+When there's at least one active NWS alert for the selected location, a small
+Leaflet map appears under the alert text, shading the affected area(s):
+
+- If the alert's own GeoJSON already includes a polygon (`geometry`) — common
+  for warnings like severe thunderstorm or flash flood warnings — that shape
+  is used directly.
+- If it doesn't (common for county/zone-based products like watches and
+  advisories), the app looks up the alert's `affectedZones` and fetches each
+  zone's shape from NWS's zone endpoint, then shades those instead. This is
+  capped at 20 zone lookups per alert (`MAX_ZONES_PER_ALERT` in `app.js`) —
+  a statewide alert can span dozens of zones, and fetching all of them
+  individually would be slow for what's meant to stay a lightweight static
+  page; beyond that cap, the map is skipped for that alert rather than show
+  an incomplete shape.
+- Multiple simultaneous alerts are layered on the same map, colored by
+  severity (red for severe/extreme, orange for moderate, gray for minor/
+  unknown), with a small legend when more than one severity is present.
+- If no shape could be resolved for any active alert (no geometry, no zones,
+  or all zone lookups failed), the map is skipped entirely and a short note
+  says so — rather than showing an empty or misleading map.
+- No active alerts at all → no map, just the existing "No active alerts for
+  this area" message.
 
 ## Accessibility & resilience notes
 

@@ -32,6 +32,7 @@
   let activeLocation = null; // { lat, lon, label }
   let searchDebounceTimer = null;
   let searchRequestToken = 0;
+  let alertsMapInstance = null; // current Leaflet map for the alerts section, if any
 
   // ---------- Utility: rendering helpers ----------
 
@@ -189,6 +190,7 @@
   }
 
   function setAllSectionsLoading() {
+    disposeAlertsMap();
     setSectionState(els.sections.current, "loading", loadingSkeleton(3));
     setSectionState(els.sections.precip, "loading", loadingSkeleton(3));
     setSectionState(els.sections.pollen, "loading", loadingSkeleton(4));
@@ -196,6 +198,7 @@
   }
 
   function resetAllSectionsIdle(message) {
+    disposeAlertsMap();
     const html = `<p class="placeholder-text">${escapeHtml(message)}</p>`;
     setSectionState(els.sections.current, "idle", html);
     setSectionState(els.sections.precip, "idle", html);
@@ -541,7 +544,15 @@
 
   // ---------- Section 4: severe weather alerts (NWS, US only) ----------
 
+  function disposeAlertsMap() {
+    if (alertsMapInstance) {
+      alertsMapInstance.remove();
+      alertsMapInstance = null;
+    }
+  }
+
   async function loadAlerts(loc) {
+    disposeAlertsMap();
     try {
       const url = `https://api.weather.gov/alerts/active?point=${loc.lat.toFixed(4)},${loc.lon.toFixed(4)}`;
       const res = await fetch(url, { headers: { Accept: "application/geo+json" } });
@@ -567,14 +578,32 @@
     }
   }
 
-  function renderAlerts(data) {
+  // Cap how many zone-geometry lookups we'll do per alert. A statewide watch can list
+  // dozens of zones; fetching all of them one-by-one would be slow and heavy for what's
+  // meant to be a lightweight static page, so beyond this cap we skip the map for that
+  // alert rather than show a partial/misleading shape.
+  const MAX_ZONES_PER_ALERT = 20;
+
+  const SEVERITY_COLORS = {
+    extreme: "#b3261e",
+    severe: "#b3261e",
+    moderate: "#b46a00",
+    minor: "#5b6b78",
+    unknown: "#5b6b78",
+  };
+
+  async function renderAlerts(data) {
+    // Any previous map is tied to a DOM node that's about to be replaced — dispose of it
+    // first to avoid leaking Leaflet instances.
+    disposeAlertsMap();
+
     const features = data.features || [];
     if (!features.length) {
       setSectionState(els.sections.alerts, "loaded", `<p class="no-alerts">No active alerts for this area.</p>`);
       return;
     }
 
-    const html = features
+    const alertBoxesHtml = features
       .map((f) => {
         const p = f.properties || {};
         const severity = (p.severity || "unknown").toLowerCase();
@@ -590,7 +619,111 @@
       })
       .join("");
 
+    const html = `
+      ${alertBoxesHtml}
+      <div id="alerts-map-wrap" class="alerts-map-wrap">
+        <div id="alerts-map" class="alerts-map"></div>
+      </div>
+    `;
     setSectionState(els.sections.alerts, "loaded", html);
+    await buildAlertsMap(features);
+  }
+
+  async function fetchZoneGeometry(zoneUrl) {
+    try {
+      const res = await fetch(zoneUrl, { headers: { Accept: "application/geo+json" } });
+      if (!res.ok) return null;
+      const zone = await res.json();
+      return zone.geometry || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function collectAlertShapes(features) {
+    const shapes = []; // { geometry, color, popupText }
+
+    for (const f of features) {
+      const p = f.properties || {};
+      const severity = (p.severity || "unknown").toLowerCase();
+      const color = SEVERITY_COLORS[severity] || SEVERITY_COLORS.unknown;
+      const popupText = escapeHtml(p.event || "Weather Alert") + (p.areaDesc ? ": " + escapeHtml(p.areaDesc) : "");
+
+      if (f.geometry) {
+        shapes.push({ geometry: f.geometry, color, popupText });
+        continue;
+      }
+
+      const zoneUrls = Array.isArray(p.affectedZones) ? p.affectedZones : [];
+      if (!zoneUrls.length || zoneUrls.length > MAX_ZONES_PER_ALERT) {
+        continue; // no shape available, or too many zones to fetch individually
+      }
+
+      const geometries = await Promise.all(zoneUrls.map(fetchZoneGeometry));
+      geometries.filter(Boolean).forEach((geometry) => {
+        shapes.push({ geometry, color, popupText });
+      });
+    }
+
+    return shapes;
+  }
+
+  async function buildAlertsMap(features) {
+    const wrap = document.getElementById("alerts-map-wrap");
+    if (!wrap) return;
+
+    const shapes = await collectAlertShapes(features);
+
+    // Bail out of showing a map at all if we couldn't resolve a single shape — an empty
+    // map would just be confusing.
+    if (!shapes.length) {
+      wrap.innerHTML = `<p class="muted-text">Affected-area map isn't available for this alert type — see the area description above.</p>`;
+      return;
+    }
+
+    if (typeof L === "undefined") {
+      wrap.innerHTML = `<p class="muted-text">Map library failed to load, so the affected area can't be shown here — see the area description above.</p>`;
+      return;
+    }
+
+    const map = L.map("alerts-map", { scrollWheelZoom: false });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 12,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    const layerGroup = L.layerGroup();
+    shapes.forEach(({ geometry, color, popupText }) => {
+      const layer = L.geoJSON(geometry, {
+        style: { color, weight: 2, fillColor: color, fillOpacity: 0.3 },
+      });
+      layer.bindPopup(popupText);
+      layer.addTo(layerGroup);
+    });
+    layerGroup.addTo(map);
+
+    try {
+      map.fitBounds(layerGroup.getBounds(), { padding: [20, 20], maxZoom: 10 });
+    } catch (e) {
+      map.setView([39.5, -98.35], 4); // fallback: rough US center if bounds are invalid
+    }
+
+    // Distinct severities present, for a small legend under the map.
+    const severitiesUsed = [...new Set(features.map((f) => (f.properties?.severity || "unknown").toLowerCase()))]
+      .filter((s) => SEVERITY_COLORS[s]);
+    if (severitiesUsed.length > 1) {
+      const legendHtml = `
+        <div class="map-legend">
+          ${severitiesUsed
+            .map((s) => `<span class="legend-item"><span class="swatch" style="background:${SEVERITY_COLORS[s]}"></span>${escapeHtml(s)}</span>`)
+            .join("")}
+        </div>
+      `;
+      wrap.insertAdjacentHTML("beforeend", legendHtml);
+    }
+    wrap.insertAdjacentHTML("beforeend", `<p class="muted-text map-caption">Shaded areas show the affected advisory/warning zones.</p>`);
+
+    alertsMapInstance = map;
   }
 
   // ---------- Init ----------
