@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="theme-color" content="#1b3a4b">
+<title>Should I Go Outside?</title>
+<meta name="description" content="Live weather, rain outlook, pollen levels, and severe weather alerts to help you decide about heading outside.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1>Should I Go Outside?</h1>
+  <p class="subtitle">Live conditions for wherever you are</p>
+</header>
+
+<section class="location-bar" aria-label="Location">
+  <div class="location-row">
+    <button id="use-location-btn" class="btn btn-primary" type="button">
+      <span class="icon" aria-hidden="true">📍</span> Use my current location
+    </button>
+    <span id="current-location-label" class="current-location-label" aria-live="polite"></span>
+  </div>
+
+  <form id="search-form" class="search-row" role="search" autocomplete="off">
+    <label for="search-input" class="visually-hidden">Search for a city</label>
+    <input id="search-input" type="text" placeholder="Or search a city, e.g. Chicago, IL" inputmode="search">
+    <button type="submit" class="btn btn-secondary">Search</button>
+  </form>
+  <ul id="search-results" class="search-results" hidden></ul>
+</section>
+
+<main id="app-main">
+
+  <!-- 1. Current temperature -->
+  <section class="card" id="section-current" aria-labelledby="heading-current">
+    <h2 id="heading-current">Current Temperature</h2>
+    <div class="card-body" data-state="idle">
+      <p class="placeholder-text">Choose a location above to load current conditions.</p>
+    </div>
+  </section>
+
+  <!-- 2. Precipitation / umbrella recommendation -->
+  <section class="card" id="section-precip" aria-labelledby="heading-precip">
+    <h2 id="heading-precip">Rain Outlook (Next Hours)</h2>
+    <div class="card-body" data-state="idle">
+      <p class="placeholder-text">Choose a location above to see the rain outlook.</p>
+    </div>
+  </section>
+
+  <!-- 3. Pollen -->
+  <section class="card" id="section-pollen" aria-labelledby="heading-pollen">
+    <h2 id="heading-pollen">Pollen Levels</h2>
+    <div class="card-body" data-state="idle">
+      <p class="placeholder-text">Choose a location above to check pollen levels.</p>
+    </div>
+  </section>
+
+  <!-- 4. Severe weather alerts -->
+  <section class="card" id="section-alerts" aria-labelledby="heading-alerts">
+    <h2 id="heading-alerts">Severe Weather Alerts</h2>
+    <div class="card-body" data-state="idle">
+      <p class="placeholder-text">Choose a location above to check for active alerts.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <p>
+    Weather &amp; precipitation data from
+    <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
+    Pollen data from Open-Meteo's Air Quality API where available (most reliable within Europe);
+    elsewhere, including the US, pollen levels are estimated client-side from typical seasonal
+    timing and current weather rather than measured directly.
+    Severe weather alerts from the
+    <a href="https://www.weather.gov/documentation/services-web-api" target="_blank" rel="noopener">US National Weather Service</a>
+    (United States locations only).
+  </p>
+  <p>This tool is not a substitute for official warnings from your local weather authority. When in doubt, follow local guidance.</p>
+</footer>
+
+<div id="toast" class="toast" role="alert" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
