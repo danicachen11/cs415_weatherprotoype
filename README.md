@@ -102,6 +102,26 @@ Open-Meteo's hourly forecast and takes the highest value in that window:
 This is a simple heuristic, not a meteorological model — feel free to adjust
 the thresholds in `renderPrecipitation()` in `app.js`.
 
+Each of those same six hours is also drawn as a small vertical bar (bar
+height = that hour's percentage) next to its time and number, so the trend
+across the next few hours is visible at a glance. No extra data or request
+is involved — it's the same `hourly.precipitation_probability` values from
+the existing Open-Meteo forecast call, just rendered as a bar in addition to
+the number.
+
+## Why the alert section jumps to the top when there's an active alert
+
+`positionAlertsSection()` in `app.js` moves the *entire* Severe Weather
+Alerts card — heading, alert text, and map together, untouched — to the very
+top of the page the moment `renderAlerts()` finds one or more active
+features, so it's the first thing visible. The moment there are no active
+alerts (or alerts can't be determined for that location, e.g. outside the US
+or a failed request), the same function moves it back to its normal spot at
+the end. This is a pure DOM reposition — the map and alert content are never
+rebuilt or altered by the move, and moving it doesn't lose the Leaflet map's
+state (it just gets a size refresh, since Leaflet can miscalculate tile
+sizing after its container moves in the page).
+
 ## How the severe-alert area map works
 
 When there's at least one active NWS alert for the selected location, a small

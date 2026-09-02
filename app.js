@@ -20,6 +20,8 @@
     searchInput: document.getElementById("search-input"),
     searchResults: document.getElementById("search-results"),
     toast: document.getElementById("toast"),
+    appMain: document.getElementById("app-main"),
+    alertsSection: document.getElementById("section-alerts"),
     sections: {
       current: document.querySelector("#section-current .card-body"),
       precip: document.querySelector("#section-precip .card-body"),
@@ -73,6 +75,27 @@
     els.toast.hidden = false;
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => { els.toast.hidden = true; }, duration);
+  }
+
+  // Moves the whole Severe Weather Alerts card (heading, alert details, and map together)
+  // to the top of the page when there's at least one active alert, so it's the first thing
+  // a user notices. With no active alert (or when alerts can't be determined — no coverage,
+  // a failed request, etc.) it's moved back to its normal spot at the end. This only ever
+  // repositions the existing section element — its content, including the Leaflet map, is
+  // never touched or rebuilt by this move.
+  function positionAlertsSection(hasActiveAlerts) {
+    if (!els.appMain || !els.alertsSection) return;
+    if (hasActiveAlerts) {
+      if (els.appMain.firstElementChild !== els.alertsSection) {
+        els.appMain.insertBefore(els.alertsSection, els.appMain.firstElementChild);
+      }
+    } else if (els.appMain.lastElementChild !== els.alertsSection) {
+      els.appMain.appendChild(els.alertsSection);
+    }
+    // Moving a Leaflet map's container in the DOM can leave its internal size cache stale.
+    if (alertsMapInstance) {
+      setTimeout(() => alertsMapInstance.invalidateSize(), 0);
+    }
   }
 
   // ---------- Geolocation ----------
@@ -199,6 +222,7 @@
 
   function resetAllSectionsIdle(message) {
     disposeAlertsMap();
+    positionAlertsSection(false);
     const html = `<p class="placeholder-text">${escapeHtml(message)}</p>`;
     setSectionState(els.sections.current, "idle", html);
     setSectionState(els.sections.precip, "idle", html);
@@ -325,10 +349,14 @@
       .map((h) => {
         const d = new Date(h.time);
         const hourLabel = d.toLocaleTimeString([], { hour: "numeric" });
+        const barPct = Math.max(0, Math.min(100, h.pct ?? 0));
         return `
           <div class="hour-item">
-            <div class="hour-label">${hourLabel}</div>
             <div class="hour-pct">${h.pct ?? "–"}%</div>
+            <div class="hour-bar-track" role="img" aria-label="${hourLabel}: ${h.pct ?? "no data"}% chance of rain">
+              <div class="hour-bar-fill" style="height:${barPct}%"></div>
+            </div>
+            <div class="hour-label">${hourLabel}</div>
           </div>
         `;
       })
@@ -559,6 +587,7 @@
 
       if (res.status === 400 || res.status === 404) {
         // Outside NWS coverage (non-US location).
+        positionAlertsSection(false);
         setSectionState(
           els.sections.alerts,
           "loaded",
@@ -571,6 +600,7 @@
       const data = await res.json();
       renderAlerts(data);
     } catch (e) {
+      positionAlertsSection(false);
       setSectionState(els.sections.alerts, "error", errorBlock(
         "Couldn't check for severe weather alerts right now.",
         () => loadAlerts(loc)
@@ -599,9 +629,11 @@
 
     const features = data.features || [];
     if (!features.length) {
+      positionAlertsSection(false);
       setSectionState(els.sections.alerts, "loaded", `<p class="no-alerts">No active alerts for this area.</p>`);
       return;
     }
+    positionAlertsSection(true);
 
     const alertBoxesHtml = features
       .map((f) => {

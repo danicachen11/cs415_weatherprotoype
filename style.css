@@ -263,12 +263,29 @@ html, body {
   text-align: center;
   min-width: 52px;
 }
+.hour-item .hour-pct {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.hour-bar-track {
+  height: 64px;
+  width: 22px;
+  margin: var(--space-1) auto;
+  background: #e9edf0;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.hour-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  background: var(--color-primary);
+  border-radius: 3px 3px 0 0;
+}
 .hour-item .hour-label {
   font-size: 0.75rem;
   color: var(--color-text-muted);
-}
-.hour-item .hour-pct {
-  font-weight: 700;
   margin-top: var(--space-1);
 }
 
